@@ -14,23 +14,25 @@ It supports:
 
 # 🚀 Architecture
 
-Google Workspace (Owner Group + Member Group)
+Google Workspace
+   ├── Owner Group
+   └── Member Group
+        ↓ (merge + dedupe, owners take precedence)
+Normalized User Set
         ↓
-Merge & Deduplicate (Owners take precedence)
+Google Admin API (profile fetch only for required users)
         ↓
-Google Admin SDK (fetch required user profiles only)
-        ↓
-GitHub SCIM API (EMU users)
+GitHub SCIM API (EMU Users)
         ↓
 Sync Engine
-    ├── Create users
-    ├── Update users
-    ├── Suspend users
-    └── Skip unchanged users
+   ├── Create users
+   ├── Update users
+   ├── Suspend users
+   └── Skip unchanged users
         ↓
 Reports
-    ├── CSV report (reports/sync-report.csv)
-    └── GitHub Actions Summary
+   ├── CSV report (reports/sync-report.csv)
+   └── GitHub Actions Summary
 
 ---
 
