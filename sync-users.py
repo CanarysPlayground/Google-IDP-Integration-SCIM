@@ -260,19 +260,35 @@ def sync():
     by_email = {v.get("userName", "").lower(): v for v in github_users.values()}
 
     stats = {"create":0,"update":0,"suspend":0,"skip":0,"error":0}
+    matched_github_ids = set()
 
     init_report()
+
+    def report_action(email, action, resp):
+        status = getattr(resp, "status_code", 200)
+        result = "OK" if status < 400 else "ERROR"
+        write_report([email, action, status, result])
+        if status >= 400:
+            stats["error"] += 1
+            logger.error(f"{action} failed for {email}: {status} {getattr(resp, 'text', '')}")
 
     # ================= CREATE / UPDATE =================
     for email, g in google_users.items():
 
-        gh = by_ext.get(g["externalId"])
+        gh = by_ext.get(g["externalId"]) or by_email.get(email)
+        if gh and gh.get("externalId") != g["externalId"]:
+            logger.warning(
+                f"GitHub user {email} exists with externalId {gh.get('externalId')} "
+                f"but Google externalId is {g['externalId']}. Using existing GitHub account."
+            )
 
         if not gh:
             resp = create_user(g)
             stats["create"] += 1
-            write_report([email, "CREATE", getattr(resp, "status_code", 200), "OK"])
+            report_action(email, "CREATE", resp)
             continue
+
+        matched_github_ids.add(gh["id"])
 
         needs_update = (
             gh.get("active") != g["active"]
@@ -288,18 +304,24 @@ def sync():
                 ]
             )
             stats["update"] += 1
-            write_report([email, "UPDATE", getattr(resp, "status_code", 200), "OK"])
+            report_action(email, "UPDATE", resp)
         else:
             stats["skip"] += 1
 
     # ================= SUSPEND =================
     for ext_id, gh in by_ext.items():
-        if ext_id not in google_users:
-            resp = patch_user(gh["id"], [
-                {"op":"replace","path":"active","value":False}
-            ])
-            stats["suspend"] += 1
-            write_report([gh.get("userName"), "SUSPEND", getattr(resp, "status_code", 200), "OK"])
+        if gh["id"] in matched_github_ids:
+            continue
+
+        user_email = gh.get("userName", "").lower()
+        if user_email in google_users:
+            continue
+
+        resp = patch_user(gh["id"], [
+            {"op":"replace","path":"active","value":False}
+        ])
+        stats["suspend"] += 1
+        report_action(user_email or gh["id"], "SUSPEND", resp)
 
     # ================= SUMMARY =================
     logger.info("SYNC SUMMARY")
