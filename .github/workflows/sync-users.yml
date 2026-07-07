@@ -1,26 +1,33 @@
 name: Google Workspace → GitHub EMU Synchronization
 
+# Manual trigger only. There is no schedule:
+#   - Provisioning (create/update) happens whenever someone runs this by hand.
+#   - Suspension is a separate, deliberate decision via the `suspend` input.
+# This keeps the group list fully visible and editable at the point of every
+# run, instead of it silently coming from a secret or a stale default.
 on:
   workflow_dispatch:
     inputs:
-      owner_group:
-        description: "Google Group for Enterprise Owners"
+      groups_json:
+        description: >
+          JSON object mapping Google Group emails to the GitHub role they
+          grant. To onboard a new group, edit this default value (in the
+          workflow file) and add another "email":"role" pair, keeping the
+          existing ones as they are.
         required: true
-        default: "github-enterprise-owners@yourdomain.com"
+        default: '{"github-enterprise-owners@yourdomain.com":"enterprise_owner","github-enterprise-members@yourdomain.com":"enterprise_member"}'
 
-      member_group:
-        description: "Google Group for Enterprise Members"
-        required: true
-        default: "github-enterprise-members@yourdomain.com"
-
-      dry_run:
-        description: "Run without making changes"
+      suspend:
+        description: "De-provision (suspend) stale users found in this run."
         required: true
         type: boolean
         default: false
 
-  schedule:
-    - cron: "0 */6 * * *"
+      dry_run:
+        description: "Run without making any changes"
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -43,13 +50,13 @@ jobs:
       GOOGLE_ADMIN_USER: ${{ secrets.GOOGLE_ADMIN_USER }}
       GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
 
-      OWNER_GROUP: ${{ github.event.inputs.owner_group }}
-      MEMBER_GROUP: ${{ github.event.inputs.member_group }}
-
+      GOOGLE_GROUPS_JSON: ${{ github.event.inputs.groups_json }}
+      ENABLE_SUSPEND: ${{ github.event.inputs.suspend }}
       DRY_RUN: ${{ github.event.inputs.dry_run }}
 
       MAX_RETRIES: 5
       RETRY_BACKOFF: 2
+      MAX_SUSPEND_RATIO: 0.2
 
     steps:
 
@@ -74,10 +81,10 @@ jobs:
 
       - name: Verify Environment
         run: |
-          echo "Enterprise : ${GITHUB_ENTERPRISE}"
-          echo "Owner Group : ${OWNER_GROUP}"
-          echo "Member Group : ${MEMBER_GROUP}"
-          echo "Dry Run : ${DRY_RUN}"
+          echo "Enterprise     : ${GITHUB_ENTERPRISE}"
+          echo "Groups         : ${GOOGLE_GROUPS_JSON}"
+          echo "Enable Suspend : ${ENABLE_SUSPEND}"
+          echo "Dry Run        : ${DRY_RUN}"
 
       - name: Execute Synchronization
         run: |
